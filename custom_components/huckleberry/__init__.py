@@ -171,6 +171,10 @@ async def _async_get_child_profile_document(
     except ValidationError:
         db_getter = getattr(api, "_get_firestore_client", None)
         if not callable(db_getter):
+            _LOGGER.warning(
+                "Unable to apply child payload sanitization fallback for %s: API client has no _get_firestore_client",
+                child_uid,
+            )
             raise
 
         db = await db_getter()
@@ -184,9 +188,15 @@ async def _async_get_child_profile_document(
         if not child_data:
             return None
 
-        return FirebaseChildDocument.model_validate(
-            _sanitize_child_document_payload(cast(dict[str, object], child_data))
-        )
+        sanitized_payload = _sanitize_child_document_payload(cast(dict[str, object], child_data))
+        try:
+            return FirebaseChildDocument.model_validate(sanitized_payload)
+        except ValidationError:
+            _LOGGER.warning(
+                "Child payload for %s still failed validation after sanitization",
+                child_uid,
+            )
+            raise
 
 
 async def _async_prune_orphaned_child_registry_entries(
