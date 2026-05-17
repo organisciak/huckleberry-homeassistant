@@ -19,6 +19,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
+from pydantic import ValidationError
 
 from huckleberry_api import HuckleberryAPI
 from huckleberry_api.firebase_types import (
@@ -89,7 +90,7 @@ async def _async_load_child_profiles(
 ) -> list[HuckleberryChildProfile]:
     """Resolve user child references to full child documents."""
     child_documents = await asyncio.gather(
-        *(api.get_child(child_ref.cid) for child_ref in user.childList)
+        *(_async_get_child_profile_document(api, child_ref.cid) for child_ref in user.childList)
     )
 
     profiles: list[HuckleberryChildProfile] = []
@@ -107,6 +108,79 @@ async def _async_load_child_profiles(
         )
 
     return profiles
+
+
+def _normalize_nullable_number(value: object) -> float | int | None | object:
+    """Normalize nullable numeric values commonly returned by Firestore payloads."""
+    if value is None or isinstance(value, (int, float)):
+        return value
+
+    if isinstance(value, str) and value.strip().lower() == "none":
+        return None
+
+    if isinstance(value, dict) and len(value) == 1:
+        nested = value.get("int", value.get("float"))
+        return _normalize_nullable_number(nested)
+
+    return value
+
+
+def _sanitize_child_document_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Sanitize known nullable child payload values before strict model validation."""
+    sanitized: dict[str, object] = dict(payload)
+
+    if "lastInsightRequest" in sanitized:
+        sanitized["lastInsightRequest"] = _normalize_nullable_number(
+            sanitized["lastInsightRequest"]
+        )
+
+    sweetspot = sanitized.get("sweetspot")
+    if isinstance(sweetspot, dict):
+        sweetspot_payload: dict[str, object] = dict(sweetspot)
+        sweetspot_payload["selectedNapDay"] = _normalize_nullable_number(
+            sweetspot_payload.get("selectedNapDay")
+        )
+
+        sweetspot_times = sweetspot_payload.get("sweetSpotTimes")
+        if isinstance(sweetspot_times, dict):
+            normalized_times: dict[str, float | int] = {}
+            for key, value in sweetspot_times.items():
+                normalized_value = _normalize_nullable_number(value)
+                if isinstance(normalized_value, (int, float)):
+                    normalized_times[str(key)] = normalized_value
+            sweetspot_payload["sweetSpotTimes"] = normalized_times
+
+        sanitized["sweetspot"] = sweetspot_payload
+
+    return sanitized
+
+
+async def _async_get_child_profile_document(
+    api: HuckleberryAPI,
+    child_uid: str,
+) -> FirebaseChildDocument | None:
+    """Fetch child document with a fallback sanitizer for nullable number fields."""
+    try:
+        return await api.get_child(child_uid)
+    except ValidationError:
+        db_getter = getattr(api, "_get_firestore_client", None)
+        if not callable(db_getter):
+            raise
+
+        db = await db_getter()
+        child_doc_ref = db.collection("childs").document(child_uid)
+        child_doc = await child_doc_ref.get()
+
+        if not child_doc.exists:
+            return None
+
+        child_data = child_doc.to_dict()
+        if not child_data:
+            return None
+
+        return FirebaseChildDocument.model_validate(
+            _sanitize_child_document_payload(cast(dict[str, object], child_data))
+        )
 
 
 async def _async_prune_orphaned_child_registry_entries(
@@ -578,4 +652,3 @@ async def _async_close_api_firestore_clients(api: HuckleberryAPI) -> None:
         api._firestore_client_loop = None
     if hasattr(api, "_listener_client"):
         api._listener_client = None
-
