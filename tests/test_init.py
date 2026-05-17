@@ -1,13 +1,13 @@
 """Test Huckleberry component setup."""
 from unittest.mock import patch
 
+import huckleberry_api.api as huckleberry_api_module
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from custom_components.huckleberry.const import DOMAIN
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.huckleberry import _sanitize_child_document_payload
-from huckleberry_api.firebase_types import FirebaseChildDocument
+from custom_components.huckleberry import _patch_child_document_validation_model
 
 
 async def test_setup_entry(hass: HomeAssistant, mock_huckleberry_api):
@@ -32,8 +32,10 @@ async def test_setup_entry(hass: HomeAssistant, mock_huckleberry_api):
     assert len(hass.states.async_all()) > 0
 
 
-def test_sanitize_child_document_payload_handles_nullable_sweetspot_values() -> None:
-    """Test sanitization keeps child payload valid when sweetspot values are nullable."""
+def test_patch_child_document_validation_model_handles_nullable_sweetspot_values() -> None:
+    """Test patched child model accepts nullable sweetspot payloads."""
+    _patch_child_document_validation_model()
+
     payload = {
         "childsName": "Test Child",
         "lastInsightRequest": {"int": None},
@@ -46,9 +48,7 @@ def test_sanitize_child_document_payload_handles_nullable_sweetspot_values() -> 
         },
     }
 
-    validated = FirebaseChildDocument.model_validate(
-        _sanitize_child_document_payload(payload)
-    )
+    validated = huckleberry_api_module.FirebaseChildDocument.model_validate(payload)
 
     assert validated.lastInsightRequest is None
     assert validated.sweetspot is not None
