@@ -148,6 +148,12 @@ def _sanitize_child_document_payload(payload: dict[str, object]) -> dict[str, ob
                 normalized_value = _normalize_nullable_number(value)
                 if isinstance(normalized_value, (int, float)):
                     normalized_times[str(key)] = normalized_value
+                else:
+                    _LOGGER.debug(
+                        "Dropping non-numeric sweetspot time value for key %s: %r",
+                        key,
+                        value,
+                    )
             sweetspot_payload["sweetSpotTimes"] = normalized_times
 
         sanitized["sweetspot"] = sweetspot_payload
