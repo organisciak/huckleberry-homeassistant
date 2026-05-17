@@ -86,8 +86,10 @@ def _normalize_nullable_number(value: object) -> object:
         return None
 
     if isinstance(value, dict) and len(value) == 1:
-        if "int" in value or "float" in value:
-            return _normalize_nullable_number(value.get("int", value.get("float")))
+        if "int" in value:
+            return _normalize_nullable_number(value["int"])
+        if "float" in value:
+            return _normalize_nullable_number(value["float"])
         return value
 
     return value

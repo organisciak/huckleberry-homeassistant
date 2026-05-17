@@ -35,6 +35,7 @@ async def test_setup_entry(hass: HomeAssistant, mock_huckleberry_api):
 def test_patch_child_document_validation_model_handles_nullable_sweetspot_values() -> None:
     """Test patched child model accepts nullable sweetspot payloads."""
     _patch_child_document_validation_model()
+    assert huckleberry_api_module.FirebaseChildDocument.__name__ == "_PatchedFirebaseChildDocument"
     _patch_child_document_validation_model()
 
     assert huckleberry_api_module.FirebaseChildDocument.__name__ == "_PatchedFirebaseChildDocument"
