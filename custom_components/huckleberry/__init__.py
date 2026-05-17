@@ -19,7 +19,6 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
-from pydantic import field_validator
 
 import huckleberry_api.api as huckleberry_api_module
 from huckleberry_api import HuckleberryAPI
@@ -33,6 +32,7 @@ from huckleberry_api.firebase_types import (
     FirebaseHealthDocumentData,
     FirebaseSleepDocumentData,
     FirebaseUserDocument,
+    Number,
     PooColor,
     PooConsistency,
 )
@@ -67,6 +67,7 @@ BOTTLE_TYPE_LEGACY_OPTIONS: Final[tuple[str, ...]] = tuple(get_args(BottleType))
 DiaperAmount = Literal["little", "medium", "big"]
 GrowthUnits = Literal["metric", "imperial"]
 BottleUnits = Literal["ml", "oz"]
+NullableFirebaseNumber = Number | None | dict[Literal["int", "float"], Number | None]
 
 
 class HuckleberryEntryData(TypedDict):
@@ -77,61 +78,18 @@ class HuckleberryEntryData(TypedDict):
     children: list[HuckleberryChildProfile]
 
 
-def _normalize_nullable_number(value: object) -> object:
-    """Normalize nullable number payloads returned by Firebase."""
-    if value is None or isinstance(value, (int, float)):
-        return value
-
-    if isinstance(value, str) and value.strip().lower() == "none":
-        return None
-
-    if isinstance(value, dict) and len(value) == 1:
-        if "int" in value:
-            return _normalize_nullable_number(value["int"])
-        if "float" in value:
-            return _normalize_nullable_number(value["float"])
-        return value
-
-    return value
-
-
 class _PatchedFirebaseChildSweetspot(FirebaseChildSweetspot):
-    """FirebaseChildSweetspot model with nullable-number coercion."""
+    """FirebaseChildSweetspot model with nullable-number field support."""
 
-    @field_validator("selectedNapDay", mode="before")
-    @classmethod
-    def _coerce_selected_nap_day(cls, value: object) -> object:
-        return _normalize_nullable_number(value)
-
-    @field_validator("sweetSpotTimes", mode="before")
-    @classmethod
-    def _coerce_sweetspot_times(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-
-        normalized_times: dict[str, int | float] = {}
-        for key, raw_value in value.items():
-            normalized_value = _normalize_nullable_number(raw_value)
-            if isinstance(normalized_value, (int, float)):
-                normalized_times[str(key)] = normalized_value
-            else:
-                _LOGGER.warning(
-                    "Dropping non-numeric sweetspot time value for key %s: %r",
-                    key,
-                    raw_value,
-                )
-        return normalized_times
+    selectedNapDay: NullableFirebaseNumber = None
+    sweetSpotTimes: dict[str, NullableFirebaseNumber] | None = None
 
 
 class _PatchedFirebaseChildDocument(FirebaseChildDocument):
-    """FirebaseChildDocument model with nullable-number coercion."""
+    """FirebaseChildDocument model with nullable-number field support."""
 
     sweetspot: _PatchedFirebaseChildSweetspot | None = None
-
-    @field_validator("lastInsightRequest", mode="before")
-    @classmethod
-    def _coerce_last_insight_request(cls, value: object) -> object:
-        return _normalize_nullable_number(value)
+    lastInsightRequest: NullableFirebaseNumber = None
 
 
 def _patch_child_document_validation_model() -> None:

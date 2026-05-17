@@ -5,6 +5,8 @@ import huckleberry_api.api as huckleberry_api_module
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from custom_components.huckleberry.const import DOMAIN
 from homeassistant.core import HomeAssistant
+import pytest
+from pydantic import ValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.huckleberry import _patch_child_document_validation_model
@@ -44,9 +46,9 @@ def test_patch_child_document_validation_model_handles_nullable_sweetspot_values
         "childsName": "Test Child",
         "lastInsightRequest": {"int": None},
         "sweetspot": {
-            "selectedNapDay": "None",
+            "selectedNapDay": {"int": None},
             "sweetSpotTimes": {
-                "0": "None",
+                "0": {"int": None},
                 "1": 1700000000,
             },
         },
@@ -54,7 +56,24 @@ def test_patch_child_document_validation_model_handles_nullable_sweetspot_values
 
     validated = huckleberry_api_module.FirebaseChildDocument.model_validate(payload)
 
-    assert validated.lastInsightRequest is None
+    assert validated.lastInsightRequest == {"int": None}
     assert validated.sweetspot is not None
-    assert validated.sweetspot.selectedNapDay is None
-    assert validated.sweetspot.sweetSpotTimes == {"1": 1700000000}
+    assert validated.sweetspot.selectedNapDay == {"int": None}
+    assert validated.sweetspot.sweetSpotTimes == {"0": {"int": None}, "1": 1700000000}
+
+
+def test_patch_child_document_validation_model_rejects_string_numbers() -> None:
+    """Test patched child model still rejects invalid string number payloads."""
+    _patch_child_document_validation_model()
+
+    payload = {
+        "childsName": "Test Child",
+        "lastInsightRequest": "None",
+        "sweetspot": {
+            "selectedNapDay": "None",
+            "sweetSpotTimes": {"0": "None"},
+        },
+    }
+
+    with pytest.raises(ValidationError):
+        huckleberry_api_module.FirebaseChildDocument.model_validate(payload)
