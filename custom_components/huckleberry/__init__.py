@@ -149,7 +149,7 @@ def _sanitize_child_document_payload(payload: dict[str, object]) -> dict[str, ob
                 if isinstance(normalized_value, (int, float)):
                     normalized_times[str(key)] = normalized_value
                 else:
-                    _LOGGER.debug(
+                    _LOGGER.warning(
                         "Dropping non-numeric sweetspot time value for key %s: %r",
                         key,
                         value,
