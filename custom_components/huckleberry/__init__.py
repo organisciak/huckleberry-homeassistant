@@ -67,7 +67,6 @@ BOTTLE_TYPE_LEGACY_OPTIONS: Final[tuple[str, ...]] = tuple(get_args(BottleType))
 DiaperAmount = Literal["little", "medium", "big"]
 GrowthUnits = Literal["metric", "imperial"]
 BottleUnits = Literal["ml", "oz"]
-_CHILD_MODEL_PATCHED = False
 
 
 class HuckleberryEntryData(TypedDict):
@@ -135,12 +134,10 @@ class _PatchedFirebaseChildDocument(FirebaseChildDocument):
 
 def _patch_child_document_validation_model() -> None:
     """Patch huckleberry_api child model to tolerate nullable number payloads."""
-    global _CHILD_MODEL_PATCHED
-    if _CHILD_MODEL_PATCHED:
+    if huckleberry_api_module.FirebaseChildDocument is _PatchedFirebaseChildDocument:
         return
 
     huckleberry_api_module.FirebaseChildDocument = _PatchedFirebaseChildDocument
-    _CHILD_MODEL_PATCHED = True
 
 
 async def _async_load_children(api: HuckleberryAPI) -> list[HuckleberryChildProfile]:
