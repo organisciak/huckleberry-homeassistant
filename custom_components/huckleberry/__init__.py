@@ -110,7 +110,7 @@ async def _async_load_child_profiles(
     return profiles
 
 
-def _normalize_nullable_number(value: object) -> float | int | None | object:
+def _normalize_nullable_number(value: object) -> object:
     """Normalize nullable numeric values commonly returned by Firestore payloads."""
     if value is None or isinstance(value, (int, float)):
         return value
