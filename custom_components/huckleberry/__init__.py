@@ -31,7 +31,6 @@ from huckleberry_api.firebase_types import (
     FirebaseDiaperDocumentData,
     FirebaseFeedDocumentData,
     FirebaseHealthDocumentData,
-    Number,
     FirebaseSleepDocumentData,
     FirebaseUserDocument,
     PooColor,
@@ -87,7 +86,9 @@ def _normalize_nullable_number(value: object) -> object:
         return None
 
     if isinstance(value, dict) and len(value) == 1:
-        return _normalize_nullable_number(value.get("int", value.get("float")))
+        if "int" in value or "float" in value:
+            return _normalize_nullable_number(value.get("int", value.get("float")))
+        return value
 
     return value
 
@@ -106,7 +107,7 @@ class _PatchedFirebaseChildSweetspot(FirebaseChildSweetspot):
         if not isinstance(value, dict):
             return value
 
-        normalized_times: dict[str, Number] = {}
+        normalized_times: dict[str, int | float] = {}
         for key, raw_value in value.items():
             normalized_value = _normalize_nullable_number(raw_value)
             if isinstance(normalized_value, (int, float)):
@@ -131,9 +132,12 @@ class _PatchedFirebaseChildDocument(FirebaseChildDocument):
         return _normalize_nullable_number(value)
 
 
+_PatchedFirebaseChildDocument.__huckleberry_nullable_patch__ = True
+
+
 def _patch_child_document_validation_model() -> None:
     """Patch huckleberry_api child model to tolerate nullable number payloads."""
-    if huckleberry_api_module.FirebaseChildDocument is _PatchedFirebaseChildDocument:
+    if getattr(huckleberry_api_module.FirebaseChildDocument, "__huckleberry_nullable_patch__", False):
         return
 
     huckleberry_api_module.FirebaseChildDocument = _PatchedFirebaseChildDocument
