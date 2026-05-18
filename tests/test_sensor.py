@@ -298,3 +298,55 @@ async def test_sweetspot_sensor_unavailable_when_selected_time_missing(
     sensor_state = hass.states.get("sensor.test_child_sweetspot")
     assert sensor_state is not None
     assert sensor_state.state == "unknown"
+
+
+async def test_sweetspot_sensor_handles_sparse_null_slots(
+    hass: HomeAssistant, mock_huckleberry_api
+):
+    """Test sweetspot payloads with null slot values do not break setup."""
+    future_zero = int((datetime.now(tz=timezone.utc) + timedelta(hours=3)).timestamp())
+    mock_huckleberry_api.get_child = AsyncMock(
+        return_value=FirebaseChildDocument(
+            childsName="Test Child",
+            birthdate="2023-01-01",
+            gender="M",
+            sweetspot=FirebaseChildSweetspot(
+                selectedNapDay=0,
+                sweetSpotTimes={"0": future_zero, "1": None},
+            ),
+        )
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_EMAIL: "test@example.com",
+            CONF_PASSWORD: "test_password",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    entity_registry = er.async_get(hass)
+    entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "child_1_sweetspot",
+        config_entry=entry,
+        disabled_by=None,
+        original_name="Sweetspot",
+        suggested_object_id="test_child_sweetspot",
+    )
+
+    with patch(
+        "custom_components.huckleberry.HuckleberryAPI",
+        return_value=mock_huckleberry_api,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    sensor_state = hass.states.get("sensor.test_child_sweetspot")
+    assert sensor_state is not None
+    assert sensor_state.state == datetime.fromtimestamp(future_zero, tz=timezone.utc).isoformat()
+    assert sensor_state.attributes["selected_nap_day"] == 0
+    assert sensor_state.attributes["0_nap_day_time"] == datetime.fromtimestamp(future_zero, tz=timezone.utc).isoformat()
+    assert "1_nap_day_time" not in sensor_state.attributes
