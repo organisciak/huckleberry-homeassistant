@@ -28,6 +28,7 @@ from huckleberry_api.firebase_types import (
     FirebaseDiaperDocumentData,
     FirebaseFeedDocumentData,
     FirebaseHealthDocumentData,
+    FirebasePumpDocumentData,
     FirebaseSleepDocumentData,
     FirebaseUserDocument,
     PooColor,
@@ -229,6 +230,7 @@ def _build_service_method_schema(
     include_growth: bool = False,
     include_bottle: bool = False,
     include_diaper_fields: bool = False,
+    include_pump: bool = False,
 ) -> vol.Schema:
     """Create a service schema from the shared target fields."""
     schema: dict[object, object] = {
@@ -254,6 +256,12 @@ def _build_service_method_schema(
         schema[vol.Optional("color")] = vol.In(POO_COLOR_OPTIONS)
         schema[vol.Optional("consistency")] = vol.In(POO_CONSISTENCY_OPTIONS)
         schema[vol.Optional("diaper_rash", default=False)] = cv.boolean
+        schema[vol.Optional("notes")] = cv.string
+
+    if include_pump:
+        schema[vol.Required("total_amount")] = vol.Coerce(float)
+        schema[vol.Optional("units", default="ml")] = vol.In(("ml", "oz"))
+        schema[vol.Optional("duration")] = vol.Coerce(float)
         schema[vol.Optional("notes")] = cv.string
 
     return vol.Schema(schema)
@@ -408,6 +416,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             units=_bottle_units_value(call.data.get("units")),
         )
 
+    async def handle_log_pump(call: ServiceCall) -> None:
+        await api_client.log_pump(
+            _target_child(call),
+            start_time=dt_util.now(),
+            total_amount=cast(float, call.data["total_amount"]),
+            duration=cast("float | None", call.data.get("duration")),
+            units=_bottle_units_value(call.data.get("units")),
+            notes=_string_value(call.data.get("notes")),
+        )
+
     hass.services.async_register(DOMAIN, "start_sleep", handle_start_sleep, schema=SERVICE_CHILD_SCHEMA)
     hass.services.async_register(DOMAIN, "pause_sleep", handle_pause_sleep, schema=SERVICE_CHILD_SCHEMA)
     hass.services.async_register(DOMAIN, "resume_sleep", handle_resume_sleep, schema=SERVICE_CHILD_SCHEMA)
@@ -439,6 +457,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "log_bottle",
         handle_log_bottle,
         schema=_build_service_method_schema(include_bottle=True),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "log_pump",
+        handle_log_pump,
+        schema=_build_service_method_schema(include_pump=True),
     )
 
     return True
@@ -507,7 +531,12 @@ class HuckleberryDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Huckleber
             await self.api.setup_feed_listener(child_uid, feed_callback)
             await self.api.setup_health_listener(child_uid, health_callback)
             await self.api.setup_diaper_listener(child_uid, diaper_callback)
+            def pump_callback(data: FirebasePumpDocumentData, uid: str = child_uid) -> None:
+                self._realtime_data[uid].pump_status = data
+                self.hass.loop.call_soon_threadsafe(self.async_set_updated_data, dict(self._realtime_data))
+
             await self.api.setup_child_listener(child_uid, child_callback)
+            await self.api.setup_pump_listener(child_uid, pump_callback)
 
     async def _async_update_data(self) -> dict[str, HuckleberryChildState]:
         """Refresh auth/session state while listeners provide live data."""
@@ -547,6 +576,11 @@ class HuckleberryDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Huckleber
         """Return the current child document for a child."""
         state = self.get_state(child_uid)
         return state.child_document if state is not None else None
+
+    def get_pump_status(self, child_uid: str) -> FirebasePumpDocumentData | None:
+        """Return the current pump document for a child."""
+        state = self.get_state(child_uid)
+        return state.pump_status if state is not None else None
 
 async def _async_close_api_firestore_clients(api: HuckleberryAPI) -> None:
     """Close Firestore transports held by the API client.

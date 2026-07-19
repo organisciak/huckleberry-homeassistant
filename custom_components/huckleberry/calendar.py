@@ -1,6 +1,7 @@
 """Calendar platform for Huckleberry integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 
@@ -16,6 +17,7 @@ from huckleberry_api.firebase_types import (
     FirebaseBreastFeedIntervalData,
     FirebaseDiaperData,
     FirebaseGrowthData,
+    FirebasePumpIntervalData,
     FirebaseSleepIntervalData,
     FirebaseSolidsFeedIntervalData,
 )
@@ -26,6 +28,10 @@ from .entity import HuckleberryBaseEntity
 from .models import HuckleberryChildProfile
 
 _LOGGER = logging.getLogger(__name__)
+
+# Coalesce/cache get_events to protect Huckleberry's shared Firestore gRPC
+# channel from bursty always-on-dashboard calls (see async_get_events).
+_EVENTS_CACHE_TTL = 90.0
 
 
 async def async_setup_entry(
@@ -63,6 +69,8 @@ class HuckleberryCalendar(HuckleberryBaseEntity, CalendarEntity):
         self._api = api
         self._attr_unique_id = f"{child.uid}_calendar"
         self._events: list[CalendarEvent] = []
+        self._events_cache: dict[tuple[str, str], tuple[float, list[CalendarEvent]]] = {}
+        self._events_lock = asyncio.Lock()
 
     @property
     def event(self) -> CalendarEvent | None:
@@ -77,7 +85,40 @@ class HuckleberryCalendar(HuckleberryBaseEntity, CalendarEntity):
         start_date: datetime,
         end_date: datetime,
     ) -> list[CalendarEvent]:
-        """Get events between start and end date."""
+        """Return events, coalescing/caching to protect the shared gRPC channel.
+
+        Always-on dashboard surfaces (Cast/kiosk) can call this very
+        frequently. Each call fans out to several Firestore streaming queries
+        over the same gRPC channel the realtime listeners use, so unthrottled
+        bursts can saturate the event loop. We serve a short-lived per-window
+        cache and serialize concurrent identical requests behind a lock.
+        """
+        key = (start_date.isoformat(), end_date.isoformat())
+        cached = self._events_cache.get(key)
+        if cached is not None and (hass.loop.time() - cached[0]) < _EVENTS_CACHE_TTL:
+            self._events = cached[1]
+            return cached[1]
+
+        async with self._events_lock:
+            cached = self._events_cache.get(key)
+            if cached is not None and (hass.loop.time() - cached[0]) < _EVENTS_CACHE_TTL:
+                self._events = cached[1]
+                return cached[1]
+
+            events = await self._fetch_events(start_date, end_date)
+            self._events_cache[key] = (hass.loop.time(), events)
+            cutoff = hass.loop.time() - _EVENTS_CACHE_TTL
+            for stale in [k for k, (ts, _) in self._events_cache.items() if ts < cutoff]:
+                del self._events_cache[stale]
+            self._events = events
+            return events
+
+    async def _fetch_events(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[CalendarEvent]:
+        """Fetch and build events from Huckleberry (the actual gRPC work)."""
         _LOGGER.debug(
             "Fetching calendar events for %s from %s to %s",
             self.child_name,
@@ -114,6 +155,14 @@ class HuckleberryCalendar(HuckleberryBaseEntity, CalendarEntity):
             _LOGGER.error("Error fetching diaper events: %s", err)
 
         try:
+            pump_intervals = await self._api.list_pump_intervals(
+                self.child_uid, start_date, end_date
+            )
+            events.extend(self._build_pump_events(pump_intervals))
+        except Exception as err:
+            _LOGGER.error("Error fetching pump events: %s", err)
+
+        try:
             health_entries = await self._api.list_health_entries(
                 self.child_uid, start_date, end_date
             )
@@ -122,7 +171,6 @@ class HuckleberryCalendar(HuckleberryBaseEntity, CalendarEntity):
             _LOGGER.error("Error fetching health events: %s", err)
 
         events.sort(key=lambda e: e.start)
-        self._events = events
         _LOGGER.debug("Found %d events for %s", len(events), self.child_name)
         return events
 
@@ -281,6 +329,39 @@ class HuckleberryCalendar(HuckleberryBaseEntity, CalendarEntity):
                 CalendarEvent(
                     start=event_time,
                     end=event_time,
+                    summary=summary,
+                    description=description,
+                )
+            )
+        return events
+
+    @staticmethod
+    def _build_pump_events(
+        intervals: list[FirebasePumpIntervalData],
+    ) -> list[CalendarEvent]:
+        """Build calendar events from pump intervals."""
+        events: list[CalendarEvent] = []
+        for interval in intervals:
+            start_time = datetime.fromtimestamp(
+                interval.start, tz=dt_util.DEFAULT_TIME_ZONE
+            )
+            duration_seconds = int(interval.duration or 0)
+            end_time = start_time + timedelta(seconds=duration_seconds)
+
+            left = float(interval.leftAmount or 0)
+            right = float(interval.rightAmount or 0)
+            total = left + right
+            units = interval.units or "ml"
+
+            summary = f"\U0001FADB Pump ({total:g} {units})"
+            description = f"Pumping: {total:g} {units}"
+            if left and right:
+                description += f"\nLeft: {left:g} {units}, Right: {right:g} {units}"
+
+            events.append(
+                CalendarEvent(
+                    start=start_time,
+                    end=end_time if duration_seconds else start_time,
                     summary=summary,
                     description=description,
                 )

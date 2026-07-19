@@ -10,6 +10,7 @@ from huckleberry_api.firebase_types import (
     FirebaseFeedDocumentData,
     FirebaseGrowthData,
     FirebaseHealthDocumentData,
+    FirebasePumpDocumentData,
     FirebaseSleepDocumentData,
     FirebaseUserChildRef,
 )
@@ -79,6 +80,7 @@ class HuckleberryChildState:
     health_status: FirebaseHealthDocumentData | None = None
     diaper_status: FirebaseDiaperDocumentData | None = None
     child_document: FirebaseChildDocument | None = None
+    pump_status: FirebasePumpDocumentData | None = None
 
     @property
     def growth_data(self) -> FirebaseGrowthData | None:

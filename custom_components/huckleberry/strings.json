@@ -350,6 +350,32 @@
           "description": "Measurement units for amount"
         }
       }
+    },
+    "log_pump": {
+      "name": "Log pumping",
+      "description": "Log a pumping session (total amount is split evenly across both sides).",
+      "fields": {
+        "device_id": {
+          "name": "Child device",
+          "description": "Select child device"
+        },
+        "total_amount": {
+          "name": "Total amount",
+          "description": "Total amount pumped (in oz or ml)"
+        },
+        "units": {
+          "name": "Units",
+          "description": "Measurement units for amount"
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Optional pumping duration in seconds"
+        },
+        "notes": {
+          "name": "Notes",
+          "description": "Optional notes"
+        }
+      }
     }
   },
   "exceptions": {
