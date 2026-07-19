@@ -2,7 +2,7 @@
 
 Home Assistant custom integration for the Huckleberry baby tracking app.
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Woyken&repository=huckleberry-homeassistant&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=organisciak&repository=huckleberry-homeassistant&category=integration)
 
 ## Overview
 
