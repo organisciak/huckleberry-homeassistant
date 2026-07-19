@@ -5,7 +5,7 @@ Home Assistant custom integration for the Huckleberry baby tracking app.
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=organisciak&repository=huckleberry-homeassistant&category=integration)
 
 > **This is a fork of [Woyken/huckleberry-homeassistant](https://github.com/Woyken/huckleberry-homeassistant).**
-> All the original work is Woyken's; this fork exists to add two things (see [Why this fork exists](#why-this-fork-exists)). The goal is to contribute both changes back upstream — once they land there, this fork won't need to exist.
+> All the original work is Woyken's; this fork exists to add two things (see [Why this fork exists](#why-this-fork-exists)). I quickly forked this while sleepless with my own baby — I hope to contribute the fixes upstream, and others are welcome to.
 
 ## Why this fork exists
 
